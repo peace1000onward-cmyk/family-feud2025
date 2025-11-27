@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Feud</title>
+    <!-- 1. Import Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 2. Import Tone.js for in-browser sound generation (no audio files needed) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    
+    <!-- 3. Custom styles for the Inter font and the card-flip animation -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Remove min-height-screen to allow content to fit on one screen */
+            background-color: #0c143d;
+            background-image: radial-gradient(circle at 100% 100%, rgba(255,255,255,0.04), rgba(255,255,255,0) 19%),
+                              radial-gradient(circle at 0% 0%, rgba(255,255,255,0.04), rgba(255,255,255,0) 36%);
+        }
+
+        /* --- Answer Card Flip Animation --- */
+        .answer-card {
+            perspective: 1000px;
+            cursor: pointer;
+            /* Tighter height to fit on small screens */
+            height: 3rem; 
+        }
+        @media (min-width: 768px) {
+             .answer-card {
+                height: 4rem; /* h-16 equivalent on larger screens */
+            }
+        }
+        .answer-card-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+        }
+        .answer-card-front,
+        .answer-card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden; /* Safari */
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.5rem; /* rounded-lg */
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+        .answer-card-front {
+            background-color: #1e3a8a; /* bg-blue-800 */
+            color: white;
+            font-size: 1.875rem; /* text-3xl */
+            font-weight: 900; /* font-black */
+        }
+        .answer-card-back {
+            background-color: #f3f4f6; /* bg-gray-100 */
+            color: #1f2937; /* text-gray-800 */
+            transform: rotateY(180deg);
+            justify-content: space-between;
+            padding: 0 1rem; /* px-4 */
+            font-weight: 700; /* font-bold */
+        }
+        .answer-card.revealed .answer-card-inner {
+            transform: rotateY(180deg);
+        }
+        
+        /* --- Styles for the new Custom Editor --- */
+        .editor-input {
+            /* Keep all Tailwind utilities via @apply, excluding the color which will be set explicitly */
+            @apply w-full bg-white p-3 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-yellow-400; 
+            /* *** CRITICAL FIX ***: Direct CSS override to enforce black text color on the white background,
+               ensuring it beats any inherited 'text-white' from the body. */
+            color: #000000 !important; 
+        }
+        .editor-button {
+            @apply bg-yellow-500 hover:bg-yellow-400 text-blue-900 font-bold py-2 px-4 rounded-lg shadow-md transition-all;
+        }
+        .editor-button-green {
+            @apply bg-green-500 hover:bg-green-400 text-black font-bold py-2 px-4 rounded-lg shadow-md transition-all;
+        }
+        .editor-button-red {
+            @apply bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-all;
+        }
+    </style>
+</head>
+<body class="bg-blue-900 text-white p-4 md:p-6">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- === HEADER & MODE TOGGLE === -->
+        <header class="flex justify-between items-center mb-4">
+            <!-- Updated name to Family Feud -->
+            <h1 class="text-4xl md:text-5xl font-black text-yellow-300" style="text-shadow: 2px 2px #000;">
+                FAMILY FEUD
+            </h1>
+            <button id="toggle-mode-button" class="bg-yellow-500 hover:bg-yellow-400 text-blue-900 font-bold py-2 px-4 rounded-lg shadow-md transition-all hidden">
+                Customize Mode
+            </button>
+        </header>
+
+        <!-- === START MENU (NEW) === -->
+        <div id="start-menu-container" class="flex flex-col items-center justify-center min-h-[70vh] text-center">
+            <div class="bg-black/40 p-10 rounded-xl shadow-2xl max-w-lg w-full">
+                <h2 class="text-5xl font-black text-yellow-300 mb-4" style="text-shadow: 2px 2px #000;">
+                    Welcome to Family Feud!
+                </h2>
+                <p class="text-xl text-gray-200 mb-8">
+                    Survey says... it's time to play!
+                </p>
+                <button id="start-game-button" class="w-full bg-green-500 hover:bg-green-400 text-black font-black py-4 px-8 rounded-lg text-2xl shadow-lg transition-all transform hover:scale-[1.02]">
+                    START GAME
+                </button>
+                <button id="customize-from-menu-button" class="mt-4 text-gray-400 hover:text-yellow-400 text-sm">
+                    Customize Rounds
+                </button>
+            </div>
+        </div>
+
+        <!-- === PLAY MODE (Hidden by Default until Start Game) === -->
+        <main id="play-mode-container" class="hidden">
+            <!-- Scoreboard (mb-4 instead of mb-6) -->
+            <section class="grid grid-cols-3 gap-4 mb-4 text-center">
+                <div class="bg-black/30 p-3 rounded-lg shadow-xl">
+                    <h3 class="text-xl md:text-2xl font-bold text-cyan-300">TEAM 1</h3>
+                    <div id="team-1-score" class="text-5xl md:text-6xl font-black mt-2">0</div>
+                </div>
+                <div class="bg-black/50 p-3 rounded-lg shadow-xl border-4 border-yellow-300">
+                    <h3 class="text-xl md:text-2xl font-bold text-yellow-300">ROUND TOTAL</h3>
+                    <div id="round-total" class="text-5xl md:text-6xl font-black mt-2">0</div>
+                </div>
+                <div class="bg-black/30 p-3 rounded-lg shadow-xl">
+                    <h3 class="text-xl md:text-2xl font-bold text-pink-300">TEAM 2</h3>
+                    <div id="team-2-score" class="text-5xl md:text-6xl font-black mt-2">0</div>
+                </div>
+            </section>
+
+            <!-- Question Display (mb-4 instead of mb-6) -->
+            <section class="mb-4 text-center">
+                <h2 id="question-display" class="text-xl md:text-3xl font-bold bg-black/30 p-4 rounded-lg shadow-lg">
+                    Loading question...
+                </h2>
+            </section>
+
+            <!-- Answer Board (mb-4 instead of mb-6) -->
+            <section id="answer-board" class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <!-- Answers will be dynamically inserted here -->
+            </section>
+
+            <!-- Wrong Answer (X) Display -->
+            <section id="wrong-answers-display" class="flex justify-center items-center space-x-6 h-16 mb-4">
+                <!-- 'X' markers will be dynamically inserted here -->
+            </section>
+
+            <!-- Host Controls -->
+            <section class="bg-black/30 p-4 rounded-lg shadow-lg">
+                <h3 class="text-xl font-bold text-center mb-3">Host Controls</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <!-- Column 1: Voice, Manual Input & Wrong -->
+                    <div class="flex flex-col gap-3">
+                        <button id="listen-button" class="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-2 px-4 rounded-lg text-lg shadow-md transition-all">
+                            🎤 Start Listening
+                        </button>
+                        <div class="flex gap-2">
+                            <!-- NOTE: Added text-black here for manual input box as well -->
+                            <input type="text" id="manual-answer-input" class="w-full bg-white/10 p-2 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-yellow-400 text-black" placeholder="Type answer...">
+                            <button id="manual-answer-button" class="bg-yellow-500 hover:bg-yellow-400 text-blue-900 font-bold p-2 px-4 rounded-lg text-base shadow-md transition-all">Go</button>
+                        </div>
+                        <button id="wrong-answer-button" class="w-full bg-red-600 hover:bg-red-500 text-white font-black py-2 px-4 rounded-lg text-lg shadow-md transition-all">
+                            ❌ WRONG ANSWER
+                        </button>
+                    </div>
+                    <!-- Column 2: Award Points -->
+                    <div class="flex flex-col gap-3">
+                         <button id="award-team-1-button" class="w-full bg-cyan-300 hover:bg-cyan-200 text-black font-bold py-2 px-4 rounded-lg text-lg shadow-md transition-all">
+                            Award to Team 1
+                        </button>
+                        <button id="award-team-2-button" class="w-full bg-pink-300 hover:bg-pink-200 text-black font-bold py-2 px-4 rounded-lg text-lg shadow-md transition-all">
+                            Award to Team 2
+                        </button>
+                    </div>
+                    <!-- Column 3: Round Control -->
+                    <div class="flex flex-col gap-3">
+                        <button id="next-round-button" class="w-full bg-green-500 hover:bg-green-400 text-black font-bold py-2 px-4 rounded-lg text-lg shadow-md transition-all">
+                            Next Round
+                        </button>
+                         <button id="reset-round-button" class="w-full bg-gray-500 hover:bg-gray-400 text-white font-bold py-2 px-4 rounded-lg text-lg shadow-md transition-all">
+                            Reset Round
+                        </button>
+                    </div>
+                </div>
+                <p id="status-message" class="text-center text-yellow-300 mt-3 h-6"></p>
+            </section>
+        </main>
+
+        <!-- === CUSTOMIZE MODE (Hidden by Default) === -->
+        <aside id="customize-mode-container" class="hidden">
+            <div class="bg-black/30 p-6 rounded-lg shadow-lg">
+                
+                <!-- NEW BACK BUTTON ADDED HERE -->
+                <button id="back-from-customize-button" class="editor-button mb-4">
+                    ← Back to Game
+                </button>
+
+                <h2 class="text-3xl font-bold mb-4">Customize Game Data</h2>
+                
+                <!-- NEW: This div will be populated by JS with the UI -->
+                <div id="customize-editor" class="w-full"></div>
+                
+                <!-- Controls for saving or resetting -->
+                <div class="flex gap-4 mt-6 border-t border-gray-600 pt-6">
+                    <button id="save-custom-changes-button" class="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-5 rounded-lg text-lg shadow-md transition-all">
+                        Save Custom Changes
+                    </button>
+                    <button id="reset-to-default-button" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-5 rounded-lg text-lg shadow-md transition-all">
+                        Reset to Default Data
+                    </button>
+                </div>
+                <p id="save-status" class="text-center text-green-400 mt-4 h-6"></p>
+            </div>
+        </aside>
+
+    </div> <!-- End max-w-7xl container -->
+
+    <!-- 4. Main Game Logic -->
+    <script type="module">
+        // === DOM Elements ===
+        const startMenuContainer = document.getElementById('start-menu-container'); // NEW
+        const startGameButton = document.getElementById('start-game-button'); // NEW
+        const customizeFromMenuButton = document.getElementById('customize-from-menu-button'); // NEW
+        const playModeContainer = document.getElementById('play-mode-container');
+        const customizeModeContainer = document.getElementById('customize-mode-container');
+        const toggleModeButton = document.getElementById('toggle-mode-button');
+        const backFromCustomizeButton = document.getElementById('back-from-customize-button'); // NEW
+        const team1ScoreEl = document.getElementById('team-1-score');
+        const team2ScoreEl = document.getElementById('team-2-score');
+        const roundTotalEl = document.getElementById('round-total');
+        const questionDisplay = document.getElementById('question-display');
+        const answerBoard = document.getElementById('answer-board');
+        const wrongAnswersDisplay = document.getElementById('wrong-answers-display');
+        const listenButton = document.getElementById('listen-button');
+        const manualAnswerInput = document.getElementById('manual-answer-input');
+        const manualAnswerButton = document.getElementById('manual-answer-button');
+        const wrongAnswerButton = document.getElementById('wrong-answer-button');
+        const awardTeam1Button = document.getElementById('award-team-1-button');
+        const awardTeam2Button = document.getElementById('award-team-2-button');
+        const nextRoundButton = document.getElementById('next-round-button');
+        const resetRoundButton = document.getElementById('reset-round-button');
+        const statusMessage = document.getElementById('status-message');
+        
+        // Customize UI Elements
+        const customizeEditor = document.getElementById('customize-editor');
+        const saveCustomChangesButton = document.getElementById('save-custom-changes-button');
+        const resetToDefaultButton = document.getElementById('reset-to-default-button');
+        const saveStatus = document.getElementById('save-status');
+
+        // === Game State ===
+        let db; // Holds all game data
+        let currentRoundIndex = 0;
+        let team1Score = 0;
+        let team2Score = 0;
+        let roundTotal = 0;
+        let wrongAnswers = 0;
+        let currentMode = 'play';
+
+        // === Default Data Structure ===
+        const defaultData = {
+            "rounds": [
+                {
+                    "question": "Name something you find in a park.",
+                    "answers": [
+                        { "text": "Trees", "points": 30 },
+                        { "text": "Bench", "points": 20 },
+                        { "text": "People", "points": 15 },
+                        { "text": "Dogs", "points": 10 },
+                        { "text": "Swings", "points": 8 },
+                        { "text": "Pond", "points": 5 },
+                        { "text": "Trash Can", "points": 2 },
+                        { "text": "Birds", "points": 1 }
+                    ]
+                },
+                {
+                    "question": "Name a reason you might be late for work.",
+                    "answers": [
+                        { "text": "Traffic", "points": 45 },
+                        { "text": "Overslept", "points": 25 },
+                        { "text": "Car Trouble", "points": 10 },
+                        { "text": "Kids", "points": 8 },
+                        { "text": "Weather", "points": 5 },
+                        { "text": "Forgot Something", "points": 3 }
+                    ]
+                },
+                {
+                    "question": "Name something people complain about.",
+                    "answers": [
+                        { "text": "Weather", "points": 35 },
+                        { "text": "Work", "points": 28 },
+                        { "text": "Money", "points": 12 },
+                        { "text": "Taxes", "points": 8 },
+                        { "text": "Politics", "points": 7 },
+                        { "text": "Traffic", "points": 5 }
+                    ]
+                }
+            ]
+        };
+
+        // === POINT CALCULATION LOGIC (NEW) ===
+
+        /**
+         * Calculates descending point values for a set of answers that sum to 100.
+         * Uses an arithmetic progression with remainder distribution for precision.
+         * @param {number} answerCount - The number of answers to distribute points across.
+         * @returns {number[]} Array of calculated point values, descending.
+         */
+        function calculatePoints(answerCount) {
+            if (answerCount <= 0) return [];
+
+            const totalPoints = 100;
+            const N = answerCount;
+            
+            // Sum of arithmetic series: 1 + 2 + ... + N = N(N+1)/2
+            const S = (N * (N + 1)) / 2;
+
+            let pointsArray = [];
+            let totalRoundedPoints = 0;
+
+            // 1. Calculate and floor the base points for each answer (descending weight)
+            for (let i = 0; i < N; i++) {
+                // Weight is N, N-1, ..., 1 (Index 0 gets weight N)
+                const weight = N - i;
+                const fractionalPoints = (totalPoints * weight) / S;
+                // Use Math.floor to ensure we only round down initially
+                const points = Math.floor(fractionalPoints); 
+                
+                pointsArray.push({ weight, points });
+                totalRoundedPoints += points;
+            }
+
+            // 2. Distribute the remainder to the highest-weighted answers (most points)
+            let remainder = totalPoints - totalRoundedPoints;
+            
+            // Distribute the remainder (e.g., if remainder is 3, add 1 point to the top 3 answers)
+            for (let i = 0; i < remainder && i < N; i++) {
+                pointsArray[i].points += 1;
+            }
+            
+            // Extract just the point values
+            return pointsArray.map(p => p.points);
+        }
+
+        // === Audio Setup (Tone.js) ===
+        let buzzer;
+        let revealSound; 
+
+        function setupAudio() {
+            if (buzzer) return;
+            // Buzzer sound
+            buzzer = new Tone.Synth({
+                oscillator: { type: 'square' },
+                envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.1 }
+            }).toDestination();
+            
+            // Reveal sound: Use a simple synth for reliability
+            revealSound = new Tone.MembraneSynth({
+                pitchDecay: 0.008,
+                octaves: 2,
+                envelope: {
+                    attack: 0.001,
+                    decay: 0.4,
+                    sustain: 0.01,
+                    release: 0.2,
+                    attackCurve: "exponential"
+                }
+            }).toDestination();
+        }
+
+        function playBuzzer() {
+            if (!buzzer) setupAudio();
+            Tone.start().then(() => {
+                buzzer.triggerAttackRelease("C2", "0.5s");
+            });
+        }
+
+        function playReveal() {
+            if (!revealSound) setupAudio();
+            Tone.start().then(() => {
+                // Trigger two notes for a quick chime effect
+                revealSound.triggerAttackRelease("G5", "8n", Tone.now());
+                revealSound.triggerAttackRelease("C6", "8n", Tone.now() + 0.1);
+            });
+        }
+
+        // === Speech Recognition Setup ===
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                statusMessage.textContent = "Listening...";
+                listenButton.classList.add('animate-pulse', 'bg-red-500');
+                listenButton.disabled = true;
+            };
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                statusMessage.textContent = `Heard: "${transcript}"`;
+                processAnswer(transcript);
+            };
+
+            recognition.onerror = (event) => {
+                statusMessage.textContent = `Error: ${event.error}`;
+                if (event.error === 'not-allowed') {
+                    statusMessage.textContent = 'Error: Microphone access denied.';
+                }
+            };
+
+            recognition.onend = () => {
+                listenButton.classList.remove('animate-pulse', 'bg-red-500');
+                listenButton.disabled = false;
+                setTimeout(() => {
+                    if (statusMessage.textContent.startsWith("Heard:") || statusMessage.textContent.startsWith("Listening...")) {
+                         statusMessage.textContent = "";
+                    }
+                }, 2000);
+            };
+
+        } else {
+            listenButton.disabled = true;
+            listenButton.textContent = "Voice Rec Not Supported";
+            statusMessage.textContent = "Your browser does not support Speech Recognition.";
+        }
+
+        // === Core Game Functions ===
+
+        /**
+         * Initializes the game, loads data from localStorage or defaults
+         */
+        function init(forceReset = false) {
+            let savedData = localStorage.getItem('digitalFeudData');
+            
+            if (!savedData || forceReset) {
+                db = JSON.parse(JSON.stringify(defaultData)); 
+                saveDataToLocalStorage();
+                if (forceReset) {
+                    showSaveStatus("Data reset to default.", "green");
+                }
+            } else {
+                try {
+                    db = JSON.parse(savedData);
+                } catch(e) {
+                    // Handle corrupted data
+                    db = JSON.parse(JSON.stringify(defaultData));
+                }
+            }
+            
+            if (forceReset) {
+                team1Score = 0;
+                team2Score = 0;
+                currentRoundIndex = 0;
+            }
+
+            // Only update scores on init, do not load the round yet
+            updateScores();
+        }
+        
+        /**
+         * Starts the game from the menu screen.
+         */
+        function startGame() { 
+            startMenuContainer.classList.add('hidden');
+            playModeContainer.classList.remove('hidden');
+            toggleModeButton.classList.remove('hidden'); // Show customize button once playing
+            loadRound(0); // Load the first round
+        }
+
+        /**
+         * Loads a specific round onto the board
+         */
+        function loadRound(index) {
+            if (index >= db.rounds.length) {
+                questionDisplay.textContent = "GAME OVER! Final Score: Team 1: " + team1Score + " | Team 2: " + team2Score;
+                answerBoard.innerHTML = '<p class="text-xl text-center md:col-span-2">Thanks for playing! Reset the game or customize data.</p>';
+                return;
+            }
+            
+            currentRoundIndex = index;
+            const round = db.rounds[currentRoundIndex];
+            
+            // Set all answers to not-revealed for this round
+            if (round.answers) {
+                round.answers.forEach(a => a.revealed = false);
+            } else {
+                round.answers = []; // Fix for potentially bad data
+            }
+            
+            questionDisplay.textContent = round.question;
+            answerBoard.innerHTML = ""; // Clear board
+            roundTotal = 0;
+            wrongAnswers = 0;
+
+            // Create answer cards
+            round.answers.forEach((answer, i) => {
+                const card = document.createElement('div');
+                // Reduced height to h-12 md:h-16 (set in CSS class now)
+                card.className = 'answer-card'; 
+                card.dataset.index = i;
+
+                card.innerHTML = `
+                    <div class="answer-card-inner">
+                        <div class="answer-card-front">
+                            ${i + 1}
+                        </div>
+                        <div class="answer-card-back">
+                            <span class="text-sm md:text-lg uppercase">${answer.text}</span>
+                            <span class="text-lg md:text-xl text-blue-800">${answer.points}</span>
+                        </div>
+                    </div>
+                `;
+                
+                card.addEventListener('click', () => {
+                    if (currentMode === 'play') {
+                        revealAnswer(i);
+                    }
+                });
+                answerBoard.appendChild(card);
+            });
+
+            updateScores();
+            updateWrongAnswers();
+        }
+
+        /**
+         * Reveals a specific answer by its index
+         */
+        function revealAnswer(index) {
+            const round = db.rounds[currentRoundIndex];
+            const answer = round.answers[index];
+            
+            if (!answer || answer.revealed) return; // Already revealed or invalid
+
+            answer.revealed = true;
+            const card = answerBoard.querySelector(`.answer-card[data-index="${index}"]`);
+            if (card) {
+                card.classList.add('revealed');
+            }
+            
+            playReveal();
+            roundTotal += answer.points;
+            updateScores();
+        }
+        
+        /**
+         * Checks a spoken or typed answer against the list with "smart" matching
+         */
+        function processAnswer(transcript) {
+            const normalizedTranscript = transcript.toLowerCase().trim();
+            const round = db.rounds[currentRoundIndex];
+            
+            let matchIndex = -1;
+
+            // Helper for simple pluralization checks
+            const isPluralMatch = (answerText, guess) => {
+                const answerLower = answerText.toLowerCase();
+                if (answerLower === guess + 's') return true;
+                if (guess.endsWith('s') && answerLower === guess.slice(0, -1)) return true;
+                return false;
+            };
+
+            // --- Level 1: Check for Exact Match ---
+            for (let i = 0; i < round.answers.length; i++) {
+                if (round.answers[i].text.toLowerCase() === normalizedTranscript) {
+                    matchIndex = i;
+                    break;
+                }
+            }
+
+            // --- Level 2: Check for Plural Match (if no exact match) ---
+            if (matchIndex === -1) {
+                for (let i = 0; i < round.answers.length; i++) {
+                    if (isPluralMatch(round.answers[i].text, normalizedTranscript)) {
+                        matchIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            // --- Level 3: Check for Partial Match (if no other match) ---
+            if (matchIndex === -1) {
+                for (let i = 0; i < round.answers.length; i++) {
+                    const answerLower = round.answers[i].text.toLowerCase();
+                    const guessInAnswer = normalizedTranscript.length > 2 && answerLower.includes(normalizedTranscript);
+                    const answerInGuess = normalizedTranscript.includes(answerLower);
+                    if (guessInAnswer || answerInGuess) {
+                        matchIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            // --- Process the result ---
+            if (matchIndex !== -1) {
+                const answer = round.answers[matchIndex];
+                if (!answer.revealed) {
+                    revealAnswer(matchIndex);
+                    statusMessage.textContent = `Correct: "${answer.text}"`; // Show what it matched
+                } else {
+                    statusMessage.textContent = `Already revealed: "${answer.text}"`;
+                }
+            } else {
+                statusMessage.textContent = `No match for: "${transcript}"`;
+                handleWrongAnswer();
+            }
+            
+            setTimeout(() => {
+                if (statusMessage.textContent.startsWith("Correct:") || 
+                    statusMessage.textContent.startsWith("Already revealed:") || 
+                    statusMessage.textContent.startsWith("No match for:")) {
+                    statusMessage.textContent = "";
+                }
+            }, 2500);
+        }
+
+        /**
+         * Handles a wrong answer
+         */
+        function handleWrongAnswer() {
+            playBuzzer();
+            if (wrongAnswers < 3) {
+                wrongAnswers++;
+                updateWrongAnswers();
+            }
+        }
+        
+        /**
+         * Updates the 'X' markers on the screen
+         */
+        function updateWrongAnswers() {
+            wrongAnswersDisplay.innerHTML = "";
+            for (let i = 0; i < 3; i++) {
+                const xMark = document.createElement('div');
+                xMark.textContent = 'X';
+                xMark.className = `font-black text-6xl md:text-8xl transition-all ${
+                    i < wrongAnswers ? 'text-red-600' : 'text-gray-700 opacity-50'
+                }`;
+                xMark.style.textShadow = '4px 4px #000';
+                wrongAnswersDisplay.appendChild(xMark);
+            }
+        }
+
+        /**
+         * Updates all score displays
+         */
+        function updateScores() {
+            team1ScoreEl.textContent = team1Score;
+            team2ScoreEl.textContent = team2Score;
+            roundTotalEl.textContent = roundTotal;
+        }
+
+        /**
+         * Awards the current round total to a team
+         */
+        function awardPoints(teamNumber) {
+            if (roundTotal === 0) return; // Don't award zero points
+            if (teamNumber === 1) {
+                team1Score += roundTotal;
+            } else {
+                team2Score += roundTotal;
+            }
+            roundTotal = 0;
+            updateScores();
+        }
+
+        /**
+         * Toggles between Play and Customize modes
+         */
+        function toggleMode() {
+            if (currentMode === 'play') {
+                currentMode = 'customize';
+                playModeContainer.classList.add('hidden');
+                startMenuContainer.classList.add('hidden'); // Hide menu too
+                customizeModeContainer.classList.remove('hidden');
+                toggleModeButton.textContent = 'Play Mode';
+                renderCustomizeUI(); // Render the friendly UI
+            } else {
+                currentMode = 'play';
+                saveDataToLocalStorage(); // Save any in-memory changes
+                customizeModeContainer.classList.add('hidden');
+                
+                // If the game has started (playModeContainer was visible), show play mode.
+                // Otherwise, show the start menu.
+                if (startGameButton.classList.contains('hidden')) { 
+                    playModeContainer.classList.remove('hidden');
+                    // Reload current round to reflect any potential changes
+                    loadRound(currentRoundIndex);
+                } else {
+                    startMenuContainer.classList.remove('hidden');
+                }
+
+                toggleModeButton.textContent = 'Customize Mode';
+                updateScores();
+            }
+        }
+
+        /**
+         * Saves the in-memory 'db' object to localStorage
+         */
+        function saveDataToLocalStorage() {
+            try {
+                // Remove the 'revealed' flag from all answers before saving, as it's runtime state
+                const dataToSave = JSON.parse(JSON.stringify(db));
+                dataToSave.rounds.forEach(round => {
+                    if (round.answers) {
+                        round.answers.forEach(answer => delete answer.revealed);
+                    }
+                });
+
+                localStorage.setItem('digitalFeudData', JSON.stringify(dataToSave));
+                showSaveStatus("Changes saved successfully!", "green");
+                return true;
+            } catch (e) {
+                showSaveStatus(`Error saving data: ${e.message}`, "red");
+                return false;
+            }
+        }
+        
+        function showSaveStatus(message, type) {
+            saveStatus.textContent = message;
+            saveStatus.className = `text-center mt-4 h-6 ${
+                type === 'green' ? 'text-green-400' : 'text-red-500'
+            }`;
+            setTimeout(() => {
+                saveStatus.textContent = "";
+            }, 3000);
+        }
+        
+        // === CUSTOMIZE UI FUNCTIONS ===
+
+        /**
+         * Renders the main list of rounds in the customize editor
+         */
+        function renderCustomizeUI() {
+            customizeEditor.innerHTML = ""; // Clear editor
+            
+            // Add "Add New Round" button
+            const addRoundButton = document.createElement('button');
+            addRoundButton.textContent = '✚ Add New Round';
+            addRoundButton.className = 'w-full editor-button-green mb-6 text-lg';
+            addRoundButton.onclick = addRound;
+            customizeEditor.appendChild(addRoundButton);
+
+            // Render each round as a card
+            db.rounds.forEach((round, index) => {
+                const roundCard = document.createElement('div');
+                roundCard.className = 'bg-black/20 p-4 rounded-lg mb-4 flex justify-between items-center';
+                
+                const roundInfo = document.createElement('div');
+                const pointSum = (round.answers || []).reduce((sum, a) => sum + (a.points || 0), 0);
+                
+                roundInfo.innerHTML = `
+                    <h3 class="text-xl font-bold">Round ${index + 1}: ${round.question || 'No Question Set'}</h3>
+                    <p class="text-gray-400">
+                        ${(round.answers ? round.answers.length : 0)} answers 
+                        | Total Points: <span class="${pointSum !== 100 ? 'text-red-400' : 'text-green-400'}">${pointSum}</span>
+                    </p>
+                `;
+                roundCard.appendChild(roundInfo);
+                
+                const roundControls = document.createElement('div');
+                roundControls.className = 'flex gap-2';
+                
+                const editButton = document.createElement('button');
+                editButton.textContent = 'Edit';
+                editButton.className = 'editor-button';
+                editButton.onclick = () => renderRoundEditor(index);
+                roundControls.appendChild(editButton);
+                
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.className = 'editor-button-red';
+                deleteButton.onclick = () => deleteRound(index);
+                roundControls.appendChild(deleteButton);
+                
+                roundCard.appendChild(roundControls);
+                customizeEditor.appendChild(roundCard);
+            });
+        }
+        
+        /**
+         * Recalculates points and updates the editor UI display.
+         */
+        function recalculateEditorPoints() {
+            const answersList = document.getElementById('answers-editor-list');
+            if (!answersList) return;
+
+            const answerRows = answersList.querySelectorAll('.answer-row');
+            const count = answerRows.length;
+            
+            const calculatedPoints = calculatePoints(count);
+
+            let totalCheck = 0;
+            answerRows.forEach((row, index) => {
+                const points = calculatedPoints[index] || 0;
+                const pointsSpan = row.querySelector('.calculated-points');
+                if (pointsSpan) {
+                    pointsSpan.textContent = `${points} Pts`;
+                }
+                totalCheck += points;
+            });
+
+            // Update the total points summary in the editor if available
+            const totalSummary = document.getElementById('editor-total-points-summary');
+            if (totalSummary) {
+                 totalSummary.textContent = `Total Points: ${totalCheck} (Must be 100)`;
+                 totalSummary.className = `text-lg font-bold mb-4 ${totalCheck !== 100 ? 'text-red-400' : 'text-green-400'}`;
+            }
+        }
+
+        /**
+         * Renders the editor for a *single* round
+         */
+        function renderRoundEditor(roundIndex) {
+            const round = db.rounds[roundIndex];
+            customizeEditor.innerHTML = ""; // Clear editor
+
+            // Back Button
+            const backButton = document.createElement('button');
+            backButton.textContent = '← Back to Round List';
+            backButton.className = 'editor-button mb-4';
+            backButton.onclick = renderCustomizeUI;
+            customizeEditor.appendChild(backButton);
+            
+            // Question Input
+            const questionLabel = document.createElement('label');
+            questionLabel.textContent = `Question for Round ${roundIndex + 1}:`;
+            questionLabel.className = 'block text-lg font-bold mb-2';
+            customizeEditor.appendChild(questionLabel);
+            
+            const questionInput = document.createElement('input');
+            questionInput.type = 'text';
+            questionInput.id = 'edit-question-input';
+            questionInput.value = round.question;
+            questionInput.className = 'editor-input mb-6';
+            questionInput.placeholder = 'Enter the question here...';
+            customizeEditor.appendChild(questionInput);
+
+            // Answers List Header
+            const answersLabel = document.createElement('label');
+            answersLabel.textContent = 'Answers (Points are AUTO-ASSIGNED and descending):';
+            answersLabel.className = 'block text-lg font-bold mb-2';
+            customizeEditor.appendChild(answersLabel);
+            
+            const totalSummary = document.createElement('p');
+            totalSummary.id = 'editor-total-points-summary';
+            customizeEditor.appendChild(totalSummary);
+
+            const answersList = document.createElement('div');
+            answersList.id = 'answers-editor-list';
+            customizeEditor.appendChild(answersList);
+
+            const answersToRender = Array.isArray(round.answers) ? round.answers : [];
+
+            answersToRender.forEach((answer, answerIndex) => {
+                const answerRow = document.createElement('div');
+                answerRow.className = 'flex gap-2 mb-2 items-center answer-row';
+                
+                const textInput = document.createElement('input');
+                textInput.type = 'text';
+                textInput.value = answer.text;
+                textInput.placeholder = `Answer ${answerIndex + 1}`;
+                textInput.className = 'editor-input flex-grow edit-answer-text';
+                // Trigger recalculation on input change (though mainly for add/delete)
+                textInput.oninput = recalculateEditorPoints; 
+                answerRow.appendChild(textInput);
+                
+                // REPLACED: Points Input field with a non-editable display
+                const pointsDisplay = document.createElement('span');
+                pointsDisplay.className = 'calculated-points text-xl font-bold w-20 text-center flex-shrink-0 text-yellow-300';
+                pointsDisplay.textContent = `${answer.points || 0} Pts`; // Use current saved points as initial placeholder
+                answerRow.appendChild(pointsDisplay);
+
+                // Delete Button
+                const deleteAnswerButton = document.createElement('button');
+                deleteAnswerButton.textContent = 'X';
+                deleteAnswerButton.className = 'editor-button-red flex-shrink-0 w-10 h-10';
+                // Call delete and then re-render (which includes recalculating points)
+                deleteAnswerButton.onclick = () => deleteAnswer(roundIndex, answerIndex);
+                answerRow.appendChild(deleteAnswerButton);
+                
+                answersList.appendChild(answerRow);
+            });
+            
+            // Add Answer Button
+            const addAnswerButton = document.createElement('button');
+            addAnswerButton.textContent = '✚ Add Answer';
+            addAnswerButton.className = 'editor-button-green mt-2';
+            addAnswerButton.onclick = () => addAnswer(roundIndex);
+            customizeEditor.appendChild(addAnswerButton);
+            
+            // Save Round Button
+            const saveRoundButton = document.createElement('button');
+            saveRoundButton.textContent = 'Save Round Changes';
+            saveRoundButton.className = 'editor-button w-full mt-6 text-lg';
+            saveRoundButton.onclick = () => saveRound(roundIndex);
+            customizeEditor.appendChild(saveRoundButton);
+
+            // Initial calculation on load
+            recalculateEditorPoints();
+        }
+
+        /**
+         * Saves the changes from the round editor back to the 'db' object
+         */
+        function saveRound(roundIndex) {
+            const newQuestion = document.getElementById('edit-question-input').value;
+            db.rounds[roundIndex].question = newQuestion;
+            
+            const newAnswers = [];
+            // Select the answer rows to get both text and calculated points
+            const answerRows = document.querySelectorAll('.answer-row'); 
+            
+            for (let i = 0; i < answerRows.length; i++) {
+                const row = answerRows[i];
+                const textInput = row.querySelector('.edit-answer-text');
+                const text = textInput.value;
+                
+                // Get the calculated points from the displayed span
+                const pointsSpan = row.querySelector('.calculated-points');
+                const points = parseInt(pointsSpan.textContent, 10) || 0; 
+                
+                if (text.trim()) {
+                    // Use the auto-assigned points
+                    newAnswers.push({ text: text.trim(), points: points });
+                }
+            }
+            
+            db.rounds[roundIndex].answers = newAnswers;
+            
+            // Save immediately and then go back to the main list
+            if (saveDataToLocalStorage()) {
+                renderCustomizeUI(); 
+            }
+        }
+
+        function addRound() {
+            db.rounds.push({
+                question: "New Question (Click Edit to Change)",
+                answers: [
+                    // Start with two answers to ensure points can be calculated
+                    { text: "New Answer 1", points: 0 }, 
+                    { text: "New Answer 2", points: 0 }
+                ]
+            });
+            // Edit the new round, which will trigger point recalculation
+            renderRoundEditor(db.rounds.length - 1); 
+        }
+
+        function deleteRound(roundIndex) {
+             if (!window.confirm("Are you sure you want to delete this whole round?")) return;
+            db.rounds.splice(roundIndex, 1);
+            saveDataToLocalStorage();
+            renderCustomizeUI();
+        }
+
+        function addAnswer(roundIndex) {
+            db.rounds[roundIndex].answers.push({ text: "New Answer", points: 0 });
+            // Re-render the editor, which triggers recalculateEditorPoints
+            renderRoundEditor(roundIndex); 
+        }
+
+        function deleteAnswer(roundIndex, answerIndex) {
+            // Confirmation is handled inside deleteRound now, using a simple browser confirm here for speed
+            // Since this is called from renderRoundEditor, we just need to delete and re-render.
+            db.rounds[roundIndex].answers.splice(answerIndex, 1);
+            renderRoundEditor(roundIndex); 
+        }
+
+
+        // === Event Listeners ===
+        toggleModeButton.addEventListener('click', toggleMode);
+        startGameButton.addEventListener('click', startGame); 
+        backFromCustomizeButton.addEventListener('click', toggleMode); // NEW Listener for the explicit back button
+
+        // Listener to switch to customize mode from the start menu
+        customizeFromMenuButton.addEventListener('click', () => { 
+            startMenuContainer.classList.add('hidden');
+            toggleMode();
+        });
+
+
+        // Listeners for the customize mode buttons
+        saveCustomChangesButton.addEventListener('click', saveDataToLocalStorage);
+        resetToDefaultButton.addEventListener('click', () => {
+             if (!window.confirm("Are you sure you want to delete all custom data and reset to the default questions?")) return;
+            init(true); // Force reset
+            renderCustomizeUI(); // Re-render the editor with default data
+        });
+        
+        listenButton.addEventListener('click', () => {
+            setupAudio();
+            Tone.start().then(() => {
+                if (SpeechRecognition) {
+                    recognition.start();
+                }
+            });
+        });
+
+        manualAnswerButton.addEventListener('click', () => {
+            const text = manualAnswerInput.value;
+            if (text.trim()) {
+                processAnswer(text.trim());
+                manualAnswerInput.value = "";
+            }
+        });
+
+        manualAnswerInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                manualAnswerButton.click();
+            }
+        });
+        
+        wrongAnswerButton.addEventListener('click', () => {
+             setupAudio();
+             handleWrongAnswer();
+        });
+
+        awardTeam1Button.addEventListener('click', () => awardPoints(1));
+        awardTeam2Button.addEventListener('click', () => awardPoints(2));
+        
+        nextRoundButton.addEventListener('click', () => {
+            loadRound(currentRoundIndex + 1);
+        });
+
+        resetRoundButton.addEventListener('click', () => {
+            loadRound(currentRoundIndex);
+        });
+        
+        // === Initial Load ===
+        init();
+
+    </script>
+</body>
+</html>
